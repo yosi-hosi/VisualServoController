@@ -171,9 +171,9 @@ namespace WpfApp
                                     var view = frame.Clone();
                                     if (_recOn) _log?.Write(frame);
                                     var obj = _controller.Run(view);
+                                    _log?.Write(obj);
                                     var radar = _controller.GetGroundCoordinateResults();
                                     _steer = obj.Steer;
-                                    _log?.Write(obj);
                                     ProcessUserThread(view.BGR, radar);
                                 });
                             VisionButton.Background = Brushes.Red;
@@ -189,9 +189,9 @@ namespace WpfApp
                                 var view = frame.Clone();
                                 if (_recOn) _log?.Write(frame);
                                 var obj = _controller.Run(view);
+                                _log?.Write(obj);
                                 var radar = _controller.GetGroundCoordinateResults();
                                 _steer = obj.Steer;
-                                _log?.Write(obj);
                                 ProcessUserThread(view.BGR, radar);
                             });
                         VisionButton.Background = Brushes.Red;
