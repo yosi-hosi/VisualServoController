@@ -147,7 +147,19 @@ namespace VisualServoCore.Controller
             // 出力はshort型(整数)で、degreeの10倍だそうです。(例：15度→戻り値は150)
             // _gainというフィールドがユーザー入力で使えるようにしています。
 
-            var steer = _gain * Math.Atan2(point.X, point.Y) * 180 / Math.PI;
+            //var steer = _gain * Math.Atan2(point.X, point.Y) * (180 / Math.PI);
+            //var maxSteer = 40;
+            //if (steer > maxSteer)
+            //{
+            //    steer = maxSteer;
+            //}
+            //else if (steer < -maxSteer)
+            //{
+            //    steer = -maxSteer;
+            //}
+
+            //距離を考慮した場合gain1000
+            var steer = _gain * (Math.Atan2(point.X, point.Y) * 180 / Math.PI) / Math.Sqrt(Math.Pow(point.X, 2) + Math.Pow(point.Y, 2));
             var maxSteer = 40;
             if (steer > maxSteer)
             {
@@ -157,9 +169,6 @@ namespace VisualServoCore.Controller
             {
                 steer = -maxSteer;
             }
-
-            //距離を考慮した場合
-            //var steer = 10 * _gain * Math.Atan2(point.X, point.Y) / point.Y;
 
             return steer;
         }
