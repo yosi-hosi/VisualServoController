@@ -9,9 +9,9 @@ using Microsoft.WindowsAPICodePack.Dialogs;
 using OpenCvSharp;
 using OpenCvSharp.WpfExtensions;
 using VisualServoCore;
-using VisualServoCore.Vision;
 using VisualServoCore.Communication;
 using VisualServoCore.Controller;
+using Husty;
 using Husty.OpenCvSharp.DepthCamera;
 
 namespace WpfApp
@@ -25,48 +25,47 @@ namespace WpfApp
 
         // Primary processes
         private IDisposable _stream;
-        private CanHandlerForEv _server;
+        private ICommunication<string> _server;
         private Realsense _depthCamera;
-        private DepthFusedController _controller;
-        private BGRXYZStream _video;
-        private DataLogger<short> _log;
+        private BgrXyzPlayer _player;
+        private DummyDepthFusedController _controller;
+        private DataLogger<double> _log;
 
         // Temporary datas and flags
         private string _initDir;
         private int _visionSelectedIndex;
+        private int _communicationSelectedIndex;
+        private bool _isSocket;
         private bool _logOn;
         private bool _recOn;
-        private short _steer;
+        private double _steer;
+        private double _speed;
         private double _gain;
         private int _maxWidth;
         private int _maxDistance;
         private readonly OpenCvSharp.Size _size = new(640, 360);
+        private record Preset(
+            string InitDir = "C:", int VisionSelectedIndex = 0, int CommunicationSelectedIndex = 0, double Gain = 1.0,
+            bool LogOn = false, bool RecOn = false, int MaxWidth = 3000, int MaxDistance = 8000
+        );
+
 
         public MainWindow()
         {
             InitializeComponent();
             DataContext = this;
-            var cacheFile = "cache";
-            try
-            {
-                using var sr = new StreamReader(cacheFile);
-                _initDir = sr.ReadLine();
-                _gain = int.Parse(sr.ReadLine());
-                _visionSelectedIndex = int.Parse(sr.ReadLine());
-                _logOn = sr.ReadLine() is "LogOn" ? true : false;
-                _recOn = sr.ReadLine() is "RecOn" ? true : false;
-                _maxWidth = int.Parse(sr.ReadLine());
-                _maxDistance = int.Parse(sr.ReadLine());
-            }
-            catch
-            {
-                _initDir = "C:";
-                _gain = 1.0;
-                _visionSelectedIndex = 0;
-                _maxWidth = 3000;
-                _maxDistance = 8000;
-            }
+            var setting = new UserSetting<Preset>(new());
+            var val = setting.Load();
+            _initDir = val.InitDir;
+            _gain = val.Gain;
+            _visionSelectedIndex = val.VisionSelectedIndex;
+            _communicationSelectedIndex = val.CommunicationSelectedIndex;
+            _logOn = val.LogOn;
+            _recOn = val.RecOn;
+            _maxWidth = val.MaxWidth;
+            _maxDistance = val.MaxDistance;
             SourceCombo.SelectedIndex = _visionSelectedIndex;
+            CommunicationCombo.SelectedIndex = _communicationSelectedIndex;
             LogCheck.IsChecked = _logOn;
             RecCheck.IsChecked = _recOn;
             GainText.Text = _gain.ToString();
@@ -77,15 +76,14 @@ namespace WpfApp
             Closed += (sender, args) =>
             {
                 GC.Collect();
+                _log?.Dispose();
                 _stream?.Dispose();
-                using var sw = new StreamWriter(cacheFile);
-                sw.WriteLine(_initDir);
-                sw.WriteLine(_gain);
-                sw.WriteLine(_visionSelectedIndex);
-                sw.WriteLine(_logOn ? "LogOn" : "LogOff");
-                sw.WriteLine(_recOn ? "RecOn" : "RecOff");
-                sw.WriteLine(_maxWidth);
-                sw.WriteLine(_maxDistance);
+                _player?.Dispose();
+                _depthCamera?.Dispose();
+                setting.Save(new(
+                    _initDir, _visionSelectedIndex, _communicationSelectedIndex,
+                    _gain, _logOn, _recOn, _maxWidth, _maxDistance)
+                );
             };
         }
 
@@ -94,9 +92,14 @@ namespace WpfApp
             if (_server is null)
             {
                 VehicleButton.IsEnabled = false;
+                _communicationSelectedIndex = CommunicationCombo.SelectedIndex;
+                _isSocket = _communicationSelectedIndex is 0;
                 Task.Run(() =>
                 {
-                    _server = new CanHandlerForEv();
+                    if (_isSocket)
+                        _server = new SocketServer(3000);
+                    else
+                        _server = new CanHandlerForEv();
                     Dispatcher.Invoke(() =>
                     {
                         VehicleButton.IsEnabled = true;
@@ -107,7 +110,10 @@ namespace WpfApp
                         try
                         {
                             Thread.Sleep(50);
-                            _server?.Send(_steer);
+                            if (_isSocket)
+                                _server?.Send($"alive,{_steer},{_speed}");
+                            else
+                                _server?.Send($"{_steer}");
                         }
                         catch
                         {
@@ -121,6 +127,12 @@ namespace WpfApp
             }
             else
             {
+                Thread.Sleep(50);
+                if (_isSocket)
+                    _server?.Send($"die,{0},{0}");
+                else
+                    _server?.Send($"{0}");
+                Thread.Sleep(1000);
                 _server?.Dispose();
                 _server = null;
                 VehicleButton.Background = Brushes.CornflowerBlue;
@@ -129,7 +141,7 @@ namespace WpfApp
 
         private void VisionButton_Click(object sender, RoutedEventArgs e)
         {
-            if (_video is null)
+            if (_depthCamera is null && _player is null)
             {
                 try
                 {
@@ -151,7 +163,7 @@ namespace WpfApp
                 {
                     return;
                 }
-                _controller = new DepthFusedController(_gain, _maxWidth, _maxDistance);
+                _controller = new(_gain, _maxWidth, _maxDistance);
                 switch (SourceCombo.SelectedIndex)
                 {
                     case 0:
@@ -164,8 +176,9 @@ namespace WpfApp
                         if (cofd.ShowDialog() is CommonFileDialogResult.Ok)
                         {
                             _initDir = Path.GetDirectoryName(cofd.FileName);
-                            _video = new(cofd.FileName);
-                            _stream = _video.Connect()
+                            _player = new(cofd.FileName);
+                            _stream = _player.ReactiveFrame
+                                .Where(f => f is not null && !f.Empty())
                                 .Subscribe(frame =>
                                 {
                                     var view = frame.Clone();
@@ -174,6 +187,7 @@ namespace WpfApp
                                     _log?.Write(obj);
                                     var radar = _controller.GetGroundCoordinateResults();
                                     _steer = obj.Steer;
+                                    _speed = obj.Speed;
                                     ProcessUserThread(view.BGR, radar);
                                 });
                             VisionButton.Background = Brushes.Red;
@@ -182,8 +196,8 @@ namespace WpfApp
                         break;
                     case 1:
                         _depthCamera = new(_size);
-                        _video = new(_depthCamera);
-                        _stream = _video.Connect()
+                        _stream = _depthCamera.ReactiveFrame
+                            .Where(f => f is not null && !f.Empty())
                             .Subscribe(frame =>
                             {
                                 var view = frame.Clone();
@@ -192,6 +206,7 @@ namespace WpfApp
                                 _log?.Write(obj);
                                 var radar = _controller.GetGroundCoordinateResults();
                                 _steer = obj.Steer;
+                                _speed = obj.Speed;
                                 ProcessUserThread(view.BGR, radar);
                             });
                         VisionButton.Background = Brushes.Red;
@@ -202,9 +217,10 @@ namespace WpfApp
             {
                 _log?.Dispose();
                 _stream?.Dispose();
-                _video?.Disconnect();
-                _video = null;
-                _depthCamera?.Disconnect();
+                _player?.Dispose();
+                _player = null;
+                _depthCamera?.Dispose();
+                _depthCamera = null;
                 VisionButton.Background = Brushes.CornflowerBlue;
                 GC.Collect();
             }
@@ -216,7 +232,7 @@ namespace WpfApp
             {
                 LeftImage.Source = radar.ToBitmapSource();
                 RightImage.Source = view.ToBitmapSource();
-                SendCommandLabel.Content = $"{_steer:f1} deg";
+                SendCommandLabel.Content = $"{_steer:f1} deg : {_speed:f1} m/s";
             });
         }
 
@@ -244,5 +260,6 @@ namespace WpfApp
         {
             _visionSelectedIndex = SourceCombo.SelectedIndex;
         }
+
     }
 }

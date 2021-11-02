@@ -6,13 +6,13 @@ using static Lawicel.CANUSB;
 
 namespace VisualServoCore.Communication
 {
-    public class CanHandlerForEv : ICommunication<short>
+    public class CanHandlerForEv : ICommunication<string>
     {
 
         // ------ Fields ------ //
 
         // Tire-Angle Order (int16, LSB=0.1deg)
-        private const uint _sendSteerId = 0x0000062F;       
+        private const uint _sendSteerId = 0x0000062F;
         private const uint _recvSteerId = 0x0000072F;
         private readonly uint _handle;
 
@@ -45,17 +45,18 @@ namespace VisualServoCore.Communication
 
         // ------ Methods ------ //
 
-        public bool Send(short steer)
+        public bool Send(string steer)
         {
+            var shortSteer = short.Parse(steer);
             var sendMsg = new CANMsg();
             var steer_order = new byte[8];
-            steer = (short)(steer * 10);
+            shortSteer = (short)(shortSteer * 10);
             sendMsg.id = 0x0000062F;
             sendMsg.len = 8;
             steer_order[0] = 0x1F;
             steer_order[1] = 0x0;
-            steer_order[3] = (byte)(steer >> 8);
-            steer_order[2] = (byte)(steer);
+            steer_order[3] = (byte)(shortSteer >> 8);
+            steer_order[2] = (byte)(shortSteer);
             for (int i = 7; i >= 0; i--) // Data Frame
             {
                 sendMsg.data = (sendMsg.data << 8) | steer_order[i];
@@ -80,7 +81,7 @@ namespace VisualServoCore.Communication
             }
         }
 
-        public short Receive()
+        public string Receive()
         {
             var rcvMsg = new CANMsg();
             var steer_msg = new byte[8];
@@ -97,7 +98,7 @@ namespace VisualServoCore.Communication
                     }
                     short msg = steer_msg[2];
                     msg = (short)((short)(msg << 8) | (short)steer_msg[1]);
-                    return msg;
+                    return $"{msg}";
                 }
             }
         }

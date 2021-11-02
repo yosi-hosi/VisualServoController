@@ -9,7 +9,7 @@ using Husty.OpenCvSharp.DepthCamera;
 
 namespace VisualServoCore.Controller
 {
-    public class DepthFusedController : IController<BgrXyzMat, short>
+    public class DepthFusedController : IController<BgrXyzMat, double>
     {
 
         // ------ Fields ------ //
@@ -46,7 +46,7 @@ namespace VisualServoCore.Controller
 
         // ------ Public Methods ------ //
 
-        public LogObject<short> Run(BgrXyzMat input)
+        public LogObject<double> Run(BgrXyzMat input)
         {
             // ここは見なくていいです
             _points = FindBoxes(input).Select(r => GetXZ(input, r)).Where(xz => xz is not null).Select(xz => (Point)xz).ToArray();
@@ -56,7 +56,8 @@ namespace VisualServoCore.Controller
                 _dPreSteer = CalculateSteer(target);
            
             }
-            return new(DateTimeOffset.Now, (short)_dPreSteer);
+            var speed = 0;
+            return new(DateTimeOffset.Now, _dPreSteer, speed);
         }
 
         public Mat GetGroundCoordinateResults()
