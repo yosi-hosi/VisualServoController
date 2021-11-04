@@ -1,9 +1,8 @@
 ﻿using System;
-using System.Collections.Generic;
 
 namespace VisualServoCore.Communication
 {
-    public class DummyCommunication : ICommunication<short>
+    public class DummyCommunication : ICommunication<string>
     {
 
         // ------ Fields ------ //
@@ -21,17 +20,17 @@ namespace VisualServoCore.Communication
 
         // ------ Methods ------ //
 
-        public bool Send(short sendmsg)
+        public bool Send(string sendmsg)
         {
             Console.Write("-->");
-            Console.WriteLine($"{sendmsg}");
+            Console.WriteLine(sendmsg);
             return true;
         }
 
-        public short Receive()
+        public string Receive()
         {
             if (_count > 255) _count = 0;
-            return _count++;
+            return $"{_count++}";
         }
 
         public void Dispose()

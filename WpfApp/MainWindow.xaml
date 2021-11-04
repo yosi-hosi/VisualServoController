@@ -45,7 +45,7 @@
         <Viewbox Grid.Row="0" Grid.Column="1" Grid.ColumnSpan="2" Margin="5">
             <ComboBox x:Name="CommunicationCombo" Width="180" Background="DarkGray">
                 <ComboBoxItem Content="Communication:TcpSocket"/>
-                <ComboBoxItem Content="Communication:CAN" IsSelected="True"/>
+                <ComboBoxItem Content="Communication:CAN"/>
             </ComboBox>
         </Viewbox>
         <Viewbox Grid.Row="1" Grid.Column="1" Grid.ColumnSpan="2" Margin="5">

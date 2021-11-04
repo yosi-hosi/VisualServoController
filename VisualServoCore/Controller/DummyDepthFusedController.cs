@@ -1,39 +1,37 @@
 ﻿using System;
-using Husty.OpenCvSharp;
 using Husty.OpenCvSharp.DepthCamera;
+using OpenCvSharp;
 
 namespace VisualServoCore.Controller
 {
-    public class DummyDepthFusedController : IController<BgrXyzMat, short>
+    public class DummyDepthFusedController : IController<BgrXyzMat, double>
     {
 
         // ------ Fields ------ //
 
         private readonly Random _randomGenerator = new();
-        private readonly YoloDetector _detector;
 
         // ------ Constructors ------ //
 
-        public DummyDepthFusedController()
+        public DummyDepthFusedController(double a, double b, double c)
         {
-            var cfg = "..\\..\\..\\..\\..\\model\\_.cfg";
-            var weights = "..\\..\\..\\..\\..\\model\\_.weights";
-            var names = "..\\..\\..\\..\\..\\model\\_.names";
-            _detector = new(cfg, weights, names, new(512, 288), 0.5f);
+
         }
 
 
         // ------ Methods ------ //
 
-        public LogObject<short> Run(BgrXyzMat input)
+        public LogObject<double> Run(BgrXyzMat input)
         {
-            if (input.Empty())
-                throw new ArgumentException("Input image is empty!");
-            var results = _detector.Run(input.BGR);
-            var steer = (_randomGenerator.NextDouble() - 0.5) * 100;
-            Console.WriteLine($"Steer: {steer} rad");
+            var steer = (_randomGenerator.NextDouble() - 0.5) * 10;
+            var speed = 5 + (_randomGenerator.NextDouble() - 0.5) * 5;
+            Console.WriteLine($"Steer: {steer:f1} rad,  Speed: {speed:f1} m/s");
+            return new(DateTimeOffset.Now, steer, speed);
+        }
 
-            return new(DateTimeOffset.Now, (short)steer);
+        public Mat GetGroundCoordinateResults()
+        {
+            return new(100, 100, MatType.CV_8U, 0);
         }
 
     }
