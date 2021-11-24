@@ -6,6 +6,8 @@ using System.Threading.Tasks;
 using OpenCvSharp;
 using Husty.OpenCvSharp;
 using Husty.OpenCvSharp.DepthCamera;
+using System.Diagnostics;
+using System.IO.Ports;
 
 namespace VisualServoCore.Controller
 {
@@ -22,7 +24,12 @@ namespace VisualServoCore.Controller
         private readonly Radar _radar;
         private Point[] _points;
         private Point? _targetPoint;
-        private double _dPreSteer;
+        private double _steer;
+        private double _speed;
+        private readonly PositionPID _PID;
+        private string _flag;
+
+        private SerialPort _port;
 
         // ------ Constructors ------ //
 
@@ -40,7 +47,11 @@ namespace VisualServoCore.Controller
             _maxWidth = maxWidth;               // maximum number of X-axis
             _maxDistance = maxDistance;         // maximum number of Z-axis
             _radar = new(maxWidth, maxDistance);
+            _PID = new(1, 0.0, 0.0, 0.1);
 
+            //var name = SerialPort.GetPortNames()[1];
+            _port = new("COM7", 9600);
+            _port.Open();
         }
 
 
@@ -53,11 +64,19 @@ namespace VisualServoCore.Controller
             _targetPoint = SelectTarget(input, _points) ?? null;
             if (_targetPoint is Point target)
             {
-                _dPreSteer = CalculateSteer(target);
-           
-            }
-            var speed = 0;
-            return new(DateTimeOffset.Now, _dPreSteer, speed);
+                //Debug.WriteLine(target);
+                _steer = CalculateSteer(target);
+
+                if (NotifyAlert(target))
+                {
+                    _speed = 0;
+                }
+                var error = (4000 - Math.Sqrt(Math.Pow(target.X, 2) + Math.Pow(target.Y, 2))) / 1000;
+                //Debug.WriteLine(error);
+                _speed = (0.5 + _PID.GetControl(error)).InsideOf(0.0, 1.0);            
+                
+            }          
+            return new(DateTimeOffset.Now, _steer, _speed);
         }
 
         public Mat GetGroundCoordinateResults()
@@ -132,11 +151,17 @@ namespace VisualServoCore.Controller
             var target = new Point(int.MaxValue, 0);
             foreach(var p in points)
             {
-                if (Math.Abs(p.X) < Math.Abs(target.X))
+                if (p.Y < _maxDistance)
                 {
-                    target = p;
+                    if (Math.Abs(p.X) < Math.Abs(target.X))
+                    {
+                        target = p;
+                    }
                 }
             }
+
+            RotateCamera(target);
+
             return target;
         }
 
@@ -148,30 +173,70 @@ namespace VisualServoCore.Controller
             // 出力はshort型(整数)で、degreeの10倍だそうです。(例：15度→戻り値は150)
             // _gainというフィールドがユーザー入力で使えるようにしています。
 
-            //var steer = _gain * Math.Atan2(point.X, point.Y) * (180 / Math.PI);
-            //var maxSteer = 40;
-            //if (steer > maxSteer)
-            //{
-            //    steer = maxSteer;
-            //}
-            //else if (steer < -maxSteer)
-            //{
-            //    steer = -maxSteer;
-            //}
+            var steer = (_gain * Math.Atan2(point.X, point.Y) * (180 / Math.PI)).InsideOf(-40, 40);
 
-            //距離を考慮した場合gain1000
-            var steer = _gain * (Math.Atan2(point.X, point.Y) * 180 / Math.PI) / Math.Sqrt(Math.Pow(point.X, 2) + Math.Pow(point.Y, 2));
-            var maxSteer = 40;
-            if (steer > maxSteer)
-            {
-                steer = maxSteer;
-            }
-            else if (steer < -maxSteer)
-            {
-                steer = -maxSteer;
-            }
+
+            //距離を考慮した場合
+            //var steer = (_gain * (Math.Atan2(point.X, point.Y) * 180 / Math.PI) / (Math.Sqrt(Math.Pow(point.X, 2) + Math.Pow(point.Y, 2)) / 1000)).InsideOf(-40, 40);
+            
+
+            //pure pursuit
+            //var steer = (Math.Atan2(2 * 2100 * point.X, Math.Pow(point.X, 2) + Math.Pow(point.Y + 2700, 2)) * 180 / Math.PI).InsideOf(-40, 40);
 
             return steer;
+        }
+
+        private bool NotifyAlert(Point point)
+        {
+            if (Math.Sqrt(Math.Pow(point.X, 2) + Math.Pow(point.Y, 2)) < 1500)
+            {
+                return true;
+            }
+            return false;
+        }
+
+        private Point RotateCamera(Point point)
+        {
+            var degree = Math.Atan2(point.X, point.Y) * 180 / Math.PI;
+            var rotation = 0;
+            var target = point;
+            //var flag = "center";
+            if (degree > 40)
+            {
+                rotation = 40;
+                target.X = (int)(point.X * Math.Cos(rotation) - point.Y * Math.Sin(rotation));
+                target.Y = (int)(point.X * Math.Sin(rotation) + point.Y * Math.Cos(rotation));
+                _flag = "right";
+            }
+            else if (degree < -40)
+            {
+                rotation = -40;
+                target.X = (int)(point.X * Math.Cos(rotation) - point.Y * Math.Sin(rotation));
+                target.Y = (int)(point.X * Math.Sin(rotation) + point.Y * Math.Cos(rotation));
+                _flag = "left";
+            }
+            else if (_flag == "right" && degree < 30)
+            {
+                rotation = -40;
+                target.X = (int)(point.X * Math.Cos(rotation) - point.Y * Math.Sin(rotation));
+                target.Y = (int)(point.X * Math.Sin(rotation) + point.Y * Math.Cos(rotation));
+                _flag = "center";
+            }
+            else if (_flag == "left" && degree > -30)
+            {
+                rotation = 40;
+                target.X = (int)(point.X * Math.Cos(rotation) - point.Y * Math.Sin(rotation));
+                target.Y = (int)(point.X * Math.Sin(rotation) + point.Y * Math.Cos(rotation));
+                _flag = "center";
+            }
+            _port?.WriteLine(rotation.ToString());
+
+            var line = _port?.ReadLine();
+            //Debug.WriteLine(line);
+            Debug.WriteLine(_flag);
+            Debug.WriteLine(degree);
+            return target;
+
         }
 
     }

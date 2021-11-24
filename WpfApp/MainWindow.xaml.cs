@@ -28,7 +28,7 @@ namespace WpfApp
         private ICommunication<string> _server;
         private Realsense _depthCamera;
         private BgrXyzPlayer _player;
-        private DummyDepthFusedController _controller;
+        private DepthFusedController _controller;
         private DataLogger<double> _log;
 
         // Temporary datas and flags
@@ -177,7 +177,7 @@ namespace WpfApp
                         {
                             _initDir = Path.GetDirectoryName(cofd.FileName);
                             _player = new(cofd.FileName);
-                            _stream = _player.ReactiveFrame
+                            _stream = _player.GetStream()
                                 .Where(f => f is not null && !f.Empty())
                                 .Subscribe(frame =>
                                 {
@@ -196,7 +196,7 @@ namespace WpfApp
                         break;
                     case 1:
                         _depthCamera = new(_size);
-                        _stream = _depthCamera.ReactiveFrame
+                        _stream = _depthCamera.GetStream()
                             .Where(f => f is not null && !f.Empty())
                             .Subscribe(frame =>
                             {
