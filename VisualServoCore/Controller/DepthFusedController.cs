@@ -52,8 +52,8 @@ namespace VisualServoCore.Controller
             _angleManager.LeftFired = (s, e) => _port?.WriteLine(e.ToString());
 
             //var name = SerialPort.GetPortNames()[1];
-            _port = new("COM7", 9600);
-            _port.Open();
+            //_port = new("COM7", 9600);
+            //_port.Open();
         }
 
 
@@ -71,8 +71,9 @@ namespace VisualServoCore.Controller
                 {
                     _speed = 0;
                 }
-                var error = (4000 - Math.Sqrt(Math.Pow(target.X, 2) + Math.Pow(target.Y, 2))) / 1000;
-                _speed = (0.5 + _PID.GetControl(error)).InsideOf(0.0, 1.0);            
+                _speed = 0.5;
+                //var error = (4000 - Math.Sqrt(Math.Pow(target.X, 2) + Math.Pow(target.Y, 2))) / 1000;
+                //_speed = (0.5 + _PID.GetControl(error)).InsideOf(0.0, 1.0);            
                 
             }          
             return new(DateTimeOffset.Now, _steer, _speed);
@@ -92,7 +93,7 @@ namespace VisualServoCore.Controller
             var h = input.BGR.Height;
             var results = _detector.Run(input.BGR);
             var boxes = results.Where(r => r.Label is "person")
-                .Where(r => r.Probability > 0.5)
+                .Where(r => r.Probability > 0.7)
                 .Select(r =>
                 {
                     r.DrawBox(input.BGR, new(0, 0, 160), 2);
@@ -153,17 +154,20 @@ namespace VisualServoCore.Controller
                 }
             }
             
-            target = _angleManager.ArrangeCoordinate(target);
+            //target = _angleManager.ArrangeCoordinate(target);
+
+            if (target.X == int.MaxValue)
+                return null;
             Debug.WriteLine(target);
             return target;
         }
 
         private double CalculateSteer(Point point)
         {
-            var steer = (_gain * Math.Atan2(point.X, point.Y) * (180 / Math.PI)).InsideOf(-40, 40);
+            //var steer = (_gain * Math.Atan2(point.X, point.Y) * (180 / Math.PI)).InsideOf(-40, 40);
 
             //距離を考慮した場合
-            //var steer = (_gain * (Math.Atan2(point.X, point.Y) * 180 / Math.PI) / (Math.Sqrt(Math.Pow(point.X, 2) + Math.Pow(point.Y, 2)) / 1000)).InsideOf(-40, 40);
+            var steer = (_gain * (Math.Atan2(point.X, point.Y) * 180 / Math.PI) / (Math.Sqrt(point.X * point.X + point.Y * point.Y) / 1000)).InsideOf(-40, 40);
 
             //pure pursuit
             //var steer = (Math.Atan2(2 * 2100 * point.X, Math.Pow(point.X, 2) + Math.Pow(point.Y + 2700, 2)) * 180 / Math.PI).InsideOf(-40, 40);
